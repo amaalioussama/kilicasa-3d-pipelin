@@ -1,3 +1,17 @@
+[server]
+# Autorise les vidéos volumineuses (en Mo). Par défaut Streamlit plafonne à 200 Mo,
+# ce qui provoque un ClientDisconnect sur les uploads de vidéos 3D.
+maxUploadSize = 2000
+maxMessageSize = 2000
+# Accès via IP publique en HTTP (pas de domaine/HTTPS) : la protection XSRF de
+# Streamlit ne peut pas poser son cookie correctement et casse les uploads.
+# On la désactive pour ce serveur de test interne.
+enableXsrfProtection = false
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
 [theme]
 base="light"
 primaryColor="#0f172a"

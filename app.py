@@ -231,17 +231,20 @@ def render_steps(placeholder, steps, current):
             html_content += f'<div class="step-item step-pending">○ {label}</div>'
     placeholder.markdown(html_content, unsafe_allow_html=True)
 
-def render_results(sharp_count, blurry_count, preview_dir, kept_label="Images Nettes"):
+def render_results(sharp_count, blurry_count, low_overlap_count, preview_dir, kept_label="Images Nettes"):
     """Affiche les métriques avec des cards modernes."""
     st.markdown("<br>", unsafe_allow_html=True)
-    total = sharp_count + blurry_count
-    
-    col1, col2, col3 = st.columns(3)
+    total = sharp_count + blurry_count + low_overlap_count
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Analysé", total)
     col2.metric(kept_label, sharp_count)
-    
-    delta_str = f"-{(blurry_count / total * 100):.0f}% rejeté" if total else "0"
-    col3.metric("Flou Détecté", blurry_count, delta=delta_str, delta_color="inverse")
+
+    blurry_delta = f"-{(blurry_count / total * 100):.0f}% rejeté" if total else "0"
+    col3.metric("Flou Détecté", blurry_count, delta=blurry_delta, delta_color="inverse")
+
+    overlap_delta = f"-{(low_overlap_count / total * 100):.0f}% rejeté" if total else "0"
+    col4.metric("Mauvais Overlap (Rejetés)", low_overlap_count, delta=overlap_delta, delta_color="inverse")
 
     kept = sorted(Path(preview_dir).glob("*.jpg")) + sorted(Path(preview_dir).glob("*.png"))
     if kept:
@@ -258,8 +261,8 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuration")
     threshold = st.slider(
         "Seuil de Tolérance (Laplacien)",
-        min_value=50.0, max_value=600.0, value=250.0, step=10.0,
-        help="Niveau de détection du Motion Blur."
+        min_value=5.0, max_value=300.0, value=40.0, step=5.0,
+        help="Niveau de détection du Motion Blur (mesuré à une résolution de référence de 1280px). Plus bas = plus tolérant."
     )
     
     fps = st.slider(
@@ -298,9 +301,9 @@ with tab1:
     if launch_video and uploaded_video is not None:
         extracted_dir = str(storage.get_path("frames_extracted"))
         rejected_dir = str(storage.get_path("frames_rejected"))
-        steps = ["Ingestion du fichier", "Discrétisation FFmpeg", "Filtre Fréquentiel (OpenCV)", "Dataset Prêt"]
-        
-        sharp_count = blurry_count = 0
+        steps = ["Ingestion du fichier", "Discrétisation FFmpeg", "Analyse de la netteté & du chevauchement (ORB)", "Dataset Prêt"]
+
+        sharp_count = blurry_count = low_overlap_count = 0
         success = False
         
         try:
@@ -311,7 +314,7 @@ with tab1:
             preprocessor.extract_frames_ffmpeg(str(saved_path), extracted_dir, fps=fps)
             
             render_steps(steps_placeholder_v, steps, 2)
-            sharp_count, blurry_count = preprocessor.filter_blurry_frames_opencv(extracted_dir, rejected_dir, threshold=threshold)
+            sharp_count, blurry_count, low_overlap_count = preprocessor.filter_blurry_frames_opencv(extracted_dir, rejected_dir, threshold=threshold, max_dimension=max_dimension)
             
             render_steps(steps_placeholder_v, steps, 3)
             success = True
@@ -319,7 +322,7 @@ with tab1:
             status_zone_v.error(f"Erreur d'exécution : {exc}")
 
         if success:
-            render_results(sharp_count, blurry_count, extracted_dir)
+            render_results(sharp_count, blurry_count, low_overlap_count, extracted_dir)
 
 # --------------------------------------------------------------------------- #
 # TAB 2 : Mode LOT DE PHOTOS
@@ -345,9 +348,9 @@ with tab2:
         photos_output_dir = str(storage.get_path("photos_processed"))
         photos_rejected_dir = str(storage.get_path("photos_rejected"))
         
-        steps = ["Mise en cache", "Nettoyage EXIF & Downscaling", "Dataset Prêt"]
-        
-        sharp_count = blurry_count = 0
+        steps = ["Mise en cache", "Analyse de la netteté & du chevauchement (ORB)", "Dataset Prêt"]
+
+        sharp_count = blurry_count = low_overlap_count = 0
         success = False
         
         try:
@@ -356,7 +359,7 @@ with tab2:
                 storage.save_file(photo, photo.name, subdir="photos_input")
                 
             render_steps(steps_placeholder_p, steps, 1)
-            sharp_count, blurry_count = preprocessor.process_photos_batch(
+            sharp_count, blurry_count, low_overlap_count = preprocessor.process_photos_batch(
                 photos_input_dir, photos_output_dir, photos_rejected_dir, max_dimension=max_dimension, threshold=threshold
             )
             
@@ -366,4 +369,4 @@ with tab2:
             status_zone_p.error(f"Erreur d'exécution : {exc}")
 
         if success:
-            render_results(sharp_count, blurry_count, photos_output_dir, kept_label="Photos Valides")
+            render_results(sharp_count, blurry_count, low_overlap_count, photos_output_dir, kept_label="Photos Valides")
